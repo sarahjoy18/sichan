@@ -1,0 +1,546 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Japan Itinerary Map — Nakasendo & Central Japan</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
+<style>
+  * { box-sizing: border-box; }
+  body { margin:0; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif; color:#1f2937; }
+  header { background:#2F5496; color:#fff; padding:14px 20px; }
+  header h1 { margin:0; font-size:1.2rem; }
+  header p { margin:4px 0 0; font-size:0.85rem; opacity:0.85; }
+  #layout { display:flex; height: calc(100vh - 62px); position:relative; }
+  #sidebar {
+    width: 240px; min-width: 190px; overflow-y:auto; background:#fafbfc; border-right:1px solid #d0d7e2;
+    padding: 10px;
+  }
+  #mapWrapper { flex:1; position:relative; }
+  #map { position:absolute; inset:0; }
+  .day-btn {
+    display:block; width:100%; text-align:left; padding:10px 12px; margin-bottom:6px;
+    border:1px solid #d0d7e2; border-radius:6px; background:#fff; cursor:pointer; font-size:0.85rem;
+    color:#1f2937;
+  }
+  .day-btn.active { background:#2F5496; color:#fff; border-color:#2F5496; }
+  .day-btn:hover:not(.active) { background:#eef2fa; }
+  .day-btn .swatch { display:inline-block; width:10px; height:10px; border-radius:50%; margin-right:8px; }
+  #allBtn { margin-bottom:14px; font-weight:600; }
+
+  /* Shared panel look */
+  .panel {
+    position:absolute; top:16px; right:16px; width:320px; max-width:calc(100% - 32px);
+    max-height:calc(100% - 32px);
+    background:#2b2f36; color:#fff; border-radius:14px; overflow:hidden;
+    box-shadow:0 8px 24px rgba(0,0,0,0.35); z-index:1000;
+    display:none; flex-direction:column;
+  }
+  .panel.open { display:flex; }
+
+  /* Numbered map markers */
+  .leaflet-div-icon.numbered-marker { background:transparent; border:none; }
+  .numbered-marker .pin {
+    width:26px; height:26px; border-radius:50%; display:flex; align-items:center; justify-content:center;
+    color:#fff; font-weight:700; font-size:0.72rem; border:2px solid #fff;
+    box-shadow:0 1px 4px rgba(0,0,0,0.45);
+  }
+  .stop-tooltip {
+    background:#2b2f36; color:#fff; border:none; border-radius:6px; padding:4px 9px;
+    font-size:0.78rem; font-weight:600; box-shadow:0 2px 6px rgba(0,0,0,0.3);
+  }
+  .stop-tooltip::before { border-top-color:#2b2f36; }
+
+  /* Draggable panel header */
+  .panel-header-drag { cursor:move; user-select:none; }
+  .dragHandle {
+    position:absolute; top:6px; left:50%; transform:translateX(-50%);
+    font-size:0.7rem; color:rgba(255,255,255,0.3); letter-spacing:1px;
+  }
+
+  /* Day list panel */
+  #panelHeader { padding:14px 16px 12px; position:relative; }
+  #panelClose {
+    position:absolute; top:10px; right:10px; width:26px; height:26px; border-radius:50%;
+    background:rgba(255,255,255,0.12); color:#fff; border:none; cursor:pointer;
+    font-size:0.9rem; line-height:1; font-weight:700;
+  }
+  #panelDayTag {
+    display:inline-block; background:rgba(255,255,255,0.14); font-size:0.72rem; font-weight:700;
+    letter-spacing:0.04em; text-transform:uppercase; padding:3px 9px; border-radius:10px; margin-bottom:8px;
+  }
+  #panelTitle { font-size:1.15rem; font-weight:700; margin-bottom:6px; }
+  #panelSummary { font-size:0.83rem; color:#c7cbd1; line-height:1.4; margin-bottom:12px; }
+  #openRouteBtn {
+    display:inline-flex; align-items:center; gap:6px; background:#fff; color:#2b2f36;
+    border:none; border-radius:20px; padding:8px 14px; font-size:0.82rem; font-weight:600; cursor:pointer;
+  }
+  #openRouteBtn:hover { background:#e8eaed; }
+  #panelCollapseBtn {
+    position:absolute; top:10px; right:44px; width:26px; height:26px; border-radius:50%;
+    background:rgba(255,255,255,0.12); color:#fff; border:none; cursor:pointer; font-size:0.75rem;
+  }
+  #listPanel.collapsed #stopList { display:none; }
+  #stopList { overflow-y:auto; padding:4px 10px 14px; border-top:1px solid rgba(255,255,255,0.1); }
+  .stopRow {
+    display:flex; gap:10px; padding:10px 6px; border-bottom:1px solid rgba(255,255,255,0.08);
+    cursor:pointer;
+  }
+  .stopRow:last-child { border-bottom:none; }
+  .stopRow:hover, .stopRow.active { background:rgba(255,255,255,0.06); border-radius:8px; }
+  .stopThumb {
+    flex:none; width:56px; height:56px; border-radius:10px;
+    display:flex; align-items:center; justify-content:center; font-size:1.4rem; color:#fff;
+  }
+  .stopInfo { flex:1; min-width:0; }
+  .stopName { font-weight:700; font-size:0.9rem; margin-bottom:2px; }
+  .stopMeta { font-size:0.76rem; color:#c7cbd1; margin-bottom:3px; }
+  .stopMeta .stars { color:#ffd25a; letter-spacing:1px; }
+  .stopNote { font-size:0.78rem; color:#e7e9ed; line-height:1.3; }
+
+  /* Detail card (single stop) */
+  #detailCard { top:auto; bottom:16px; right:16px; }
+  #cardBanner {
+    height:110px; position:relative; display:flex; align-items:flex-end; background-size:cover; background-position:center;
+  }
+  #cardBanner .icon { font-size:2.6rem; margin:auto; opacity:0.9; }
+  #cardBanner .dayTag {
+    position:absolute; left:10px; bottom:10px;
+    background:rgba(0,0,0,0.45); color:#fff; font-size:0.72rem; font-weight:600;
+    padding:3px 9px; border-radius:12px;
+  }
+  #cardBackBtn, #cardCloseBtn {
+    position:absolute; top:8px; width:26px; height:26px; border-radius:50%;
+    background:rgba(255,255,255,0.9); color:#2b2f36; border:none; cursor:pointer;
+    font-size:0.9rem; line-height:1; font-weight:700;
+  }
+  #cardBackBtn { left:8px; }
+  #cardCloseBtn { right:8px; }
+  #cardBody { padding:12px 14px 10px; }
+  #cardName { font-weight:700; font-size:1.02rem; margin-bottom:4px; }
+  #cardMeta { color:#d7dae0; font-size:0.8rem; margin-bottom:8px; }
+  #cardMeta .stars { color:#ffd25a; letter-spacing:1px; }
+  #cardNotesLabel { color:#9aa1ab; font-size:0.72rem; margin-bottom:2px; }
+  #cardNotes { font-weight:600; margin-bottom:10px; line-height:1.35; font-size:0.85rem; }
+  .cardRow { display:flex; align-items:center; gap:8px; margin-bottom:7px; color:#e7e9ed; text-decoration:none; font-size:0.85rem; }
+  .cardRow .ic { width:16px; text-align:center; opacity:0.85; }
+  .cardRow.link:hover { color:#8fb4ff; }
+  #cardFooter {
+    display:flex; align-items:center; justify-content:space-between;
+    border-top:1px solid rgba(255,255,255,0.12); padding:8px 10px; background:#23262c;
+  }
+  #cardFooter .navBtn { background:none; border:none; color:#fff; font-size:1rem; cursor:pointer; padding:4px 10px; }
+  #cardFooter .navBtn:disabled { opacity:0.3; cursor:default; }
+  #cardCounter { font-size:0.78rem; color:#c7cbd1; text-align:center; }
+  #cardCounterDay { display:block; font-size:0.68rem; color:#8b929c; }
+
+  @media (max-width: 700px) {
+    #layout { flex-direction:column; height:auto; }
+    #sidebar { width:100%; max-height:170px; }
+    #map { height:70vh; }
+    .panel { left:10px; right:10px; width:auto; top:auto; bottom:10px; max-height:80%; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Japan Itinerary Map — Nakasendo &amp; Central Japan</h1>
+  <p>Nov 18–27, 2026 · Nagoya → Takayama → Shirakawa-go → Toyama → Kanazawa → Nagoya</p>
+</header>
+
+<div id="layout">
+  <div id="sidebar">
+    <button class="day-btn" id="allBtn">Show All Days</button>
+    <div id="dayList"></div>
+  </div>
+  <div id="mapWrapper">
+    <div id="map"></div>
+
+    <div id="listPanel" class="panel">
+      <div id="panelHeader" class="panel-header-drag">
+        <span class="dragHandle">⠿⠿</span>
+        <button id="panelCollapseBtn">▾</button>
+        <button id="panelClose">✕</button>
+        <div id="panelDayTag">Day 1</div>
+        <div id="panelTitle">Title</div>
+        <div id="panelSummary">Summary</div>
+        <button id="openRouteBtn">↗ Open route</button>
+      </div>
+      <div id="stopList"></div>
+    </div>
+
+    <div id="detailCard" class="panel">
+      <div id="cardBanner" class="panel-header-drag">
+        <span class="dragHandle">⠿⠿</span>
+        <button id="cardBackBtn">←</button>
+        <button id="cardCloseBtn">✕</button>
+        <span class="icon" id="cardIcon">📍</span>
+        <span class="dayTag" id="cardDayTag">Day 1</span>
+      </div>
+      <div id="cardBody">
+        <div id="cardName">Place name</div>
+        <div id="cardMeta"><span class="stars"></span> <span id="cardRatingText"></span> · <span id="cardCategory"></span></div>
+        <div id="cardNotesLabel">Notes from Claude</div>
+        <div id="cardNotes">—</div>
+        <a class="cardRow" id="cardPhoneRow" href="#"><span class="ic">📞</span><span id="cardPhone"></span></a>
+        <a class="cardRow link" id="cardMapsRow" href="#" target="_blank" rel="noopener"><span class="ic">🌐</span><span>Open in Google Maps</span></a>
+      </div>
+      <div id="cardFooter">
+        <button class="navBtn" id="prevBtn">←</button>
+        <span id="cardCounter">1 of 30<span id="cardCounterDay">Day 1</span></span>
+        <button class="navBtn" id="nextBtn">→</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script>
+function categoryLabel(types) {
+  const skip = new Set(["point_of_interest","establishment","political","sublocality","sublocality_level_1","sublocality_level_2"]);
+  const t = (types || []).find(x => !skip.has(x));
+  if (!t) return "Place";
+  return t.split("_").map(w => w[0].toUpperCase()+w.slice(1)).join(" ");
+}
+function categoryIcon(types) {
+  const map = {
+    train_station:"🚉", transit_station:"🚉", international_airport:"✈️", airport:"✈️",
+    tourist_attraction:"📍", historical_landmark:"🏯", historical_place:"🏯", castle:"🏯",
+    garden:"🌳", park:"🌳", market:"🛍️", museum:"🏛️", buddhist_temple:"⛩️",
+    shinto_shrine:"⛩️", place_of_worship:"⛩️", observation_deck:"🚡", scenic_spot:"🍁",
+    hiking_area:"🥾"
+  };
+  for (const t of (types||[])) if (map[t]) return map[t];
+  return "📍";
+}
+function starString(rating) {
+  if (!rating) return "";
+  const full = Math.round(rating);
+  return "★".repeat(full) + "☆".repeat(5-full);
+}
+function mapsUrl(placeId) {
+  return placeId ? `https://www.google.com/maps/place/?q=place_id:${placeId}` : "#";
+}
+function routeUrl(stops) {
+  const coords = stops.map(s => `${s.lat},${s.lng}`);
+  const origin = coords[0], destination = coords[coords.length-1];
+  const waypoints = coords.slice(1,-1).join('|');
+  let url = `https://www.google.com/maps/dir/?api=1&origin=${origin}&destination=${destination}&travelmode=transit`;
+  if (waypoints) url += `&waypoints=${encodeURIComponent(waypoints)}`;
+  return url;
+}
+
+const days = [
+ { n:1, title:"Arrival", summary:"Land at Chubu Centrair and get to Nagoya Station, your first home base.", color:"#2F5496", stops:[
+  {name:"Chubu Centrair Airport", lat:34.8573624, lng:136.8107557, note:"Arrive here", rating:4.3, count:9979, phone:"+81 569-38-1195", place_id:"ChIJzynM7ZN9BGARJQAsbih9mEI", types:["international_airport","airport"]},
+  {name:"Nagoya Station (Home Base)", lat:35.170915, lng:136.8815369, note:"TRAIN: Meitetsu Line, ~30 min. PAY: manaca or ticket machine", rating:4.0, count:7008, phone:"+81 50-3772-3910", place_id:"ChIJiYvXlOd2A2ARYxYm-Esg94E", types:["train_station"]},
+ ]},
+ { n:2, title:"Nakasendo Trail", summary:"Loop out from Nagoya to Nagiso, walk the historic trail from Tsumago to Magome, then return via Nakatsugawa.", color:"#C0392B", stops:[
+  {name:"Nagoya Station (Home Base)", lat:35.170915, lng:136.8815369, note:"TRAIN: JR Chuo Ltd Express 'Shinano' (reserved). PAY: credit/cash", rating:4.0, count:7008, phone:"+81 50-3772-3910", place_id:"ChIJiYvXlOd2A2ARYxYm-Esg94E", types:["train_station"]},
+  {name:"Nagiso Station", lat:35.5988443, lng:137.6084065, note:"No IC readers — CASH only", rating:3.9, count:158, phone:null, place_id:"ChIJX0KwAePHHGAR-dI6PnAjmPw", types:["train_station"]},
+  {name:"Tsumago-juku", lat:35.5775876, lng:137.5956667, note:"BUS from Nagiso. PAY: cash", rating:4.3, count:7973, phone:"+81 264-57-3123", place_id:"ChIJM7uYpeS3HGAR9jZQMTUsvIc", types:["tourist_attraction","historical_landmark"]},
+  {name:"Magome-juku", lat:35.5315174, lng:137.5717516, note:"WALK the Nakasendo Trail, ~3 hrs", rating:null, count:null, phone:null, place_id:"ChIJBzCC3Rq3HGAR-hYRNmVudn0", types:["sublocality"]},
+  {name:"Nakatsugawa Station", lat:35.5004945, lng:137.5031352, note:"BUS from Magome. PAY: cash", rating:3.7, count:364, phone:null, place_id:"ChIJdaBfNEm0HGARBzlqnps4tlU", types:["train_station"]},
+  {name:"Nagoya Station (Home Base)", lat:35.170915, lng:136.8815369, note:"TRAIN back. PAY: manaca", rating:4.0, count:7008, phone:"+81 50-3772-3910", place_id:"ChIJiYvXlOd2A2ARYxYm-Esg94E", types:["train_station"]},
+ ]},
+ { n:3, title:"Nagoya City", summary:"A full day exploring Nagoya's castle, museum, market, and temple, all reachable by subway.", color:"#8E44AD", stops:[
+  {name:"Nagoya Station (Home Base)", lat:35.170915, lng:136.8815369, note:"Start here", rating:4.0, count:7008, phone:"+81 50-3772-3910", place_id:"ChIJiYvXlOd2A2ARYxYm-Esg94E", types:["train_station"]},
+  {name:"Yanagibashi Central Market", lat:35.1699909, lng:136.8880404, note:"WALK ~5 min. PAY: cash, closed Wed/Sun", rating:4.0, count:1883, phone:"+81 52-581-8111", place_id:"ChIJO7D5qt52A2ARssqBgiIQo8E", types:["tourist_attraction","market"]},
+  {name:"Nagoya Castle", lat:35.1847501, lng:136.8996883, note:"SUBWAY: Meijo Line. PAY: manaca + cash entry", rating:4.2, count:45277, phone:"+81 52-231-1700", place_id:"ChIJse-wx8t2A2ARd6Z1knjp07k", types:["castle","tourist_attraction"]},
+  {name:"Toyota Commemorative Museum", lat:35.182564, lng:136.8759846, note:"TRAIN/WALK. PAY: manaca + cash/card entry", rating:4.6, count:13864, phone:"+81 52-551-6115", place_id:"ChIJ____05N2A2ARK1ejw7VH1KM", types:["tourist_attraction","museum"]},
+  {name:"Osu Kannon", lat:35.1596892, lng:136.8994186, note:"SUBWAY. PAY: manaca, free entry", rating:4.2, count:12303, phone:"+81 52-231-6525", place_id:"ChIJr3HDSzJ3A2AR6Pctdr3J-yc", types:["buddhist_temple","place_of_worship"]},
+  {name:"Nagoya Station (Home Base)", lat:35.170915, lng:136.8815369, note:"Sakae dinner on the way back", rating:4.0, count:7008, phone:"+81 50-3772-3910", place_id:"ChIJiYvXlOd2A2ARYxYm-Esg94E", types:["train_station"]},
+ ]},
+ { n:4, title:"To Takayama", summary:"Full itinerary with Day 5 (morning market + soba lunch) and Day 7 (Higashi Chaya → Kanazawa Station leg) now fully integrated into the overall route.", color:"#D68910", stops:[
+  {name:"Nagoya Station (Home Base)", lat:35.170915, lng:136.8815369, note:"TRAIN: JR Hida Ltd Express (reserved), ~2.5 hrs", rating:4.0, count:7008, phone:"+81 50-3772-3910", place_id:"ChIJiYvXlOd2A2ARYxYm-Esg94E", types:["train_station"]},
+  {name:"Takayama Station (New Home Base)", lat:36.1410762, lng:137.2513645, note:"Check in to hostel nearby", rating:4.2, count:1015, phone:null, place_id:"ChIJwQzRXCi7AmARWccmYfpezQQ", types:["train_station"]},
+  {name:"Sanmachi Suji", lat:36.1413161, lng:137.2596227, note:"WALK ~10 min. PAY: cash", rating:4.5, count:1314, phone:null, place_id:"ChIJczG1tNu6AmARjrgU-Yh3zH8", types:["historical_landmark","tourist_attraction"]},
+  {name:"Takayama Jinya", lat:36.1396312, lng:137.2576045, note:"WALK, adjacent. PAY: cash entry", rating:4.3, count:9091, phone:"+81 577-32-0643", place_id:"ChIJj29EXtm6AmAR4ZH1chH39Zg", types:["historical_landmark","tourist_attraction"]},
+  {name:"Hida-Furukawa Station", lat:36.2367259, lng:137.1896028, note:"TRAIN local, ~15-20 min", rating:4.2, count:501, phone:null, place_id:"ChIJX1oW4-WgAmARiYsUBi2FUBA", types:["train_station"]},
+  {name:"Setogawa & Shirakabe Dozou Street", lat:36.2353207, lng:137.1867874, note:"WALK. PAY: cash for fish feeding", rating:4.3, count:1341, phone:"+81 577-73-2111", place_id:"ChIJh6IDmeWgAmARisGVD1qfPKc", types:["tourist_attraction","historical_landmark"]},
+  {name:"Takayama Station (Home Base)", lat:36.1410762, lng:137.2513645, note:"TRAIN back", rating:4.2, count:1015, phone:null, place_id:"ChIJwQzRXCi7AmARWccmYfpezQQ", types:["train_station"]},
+ ]},
+ { n:5, title:"Morning Market & Shinhotaka", summary:"Breakfast at Miyagawa Morning Market, then a Nohi Bus day trip up to Shinhotaka Ropeway for soba and alpine views.", color:"#16A085", stops:[
+  {name:"Takayama Station (Home Base)", lat:36.1410762, lng:137.2513645, note:"Start here", rating:4.2, count:1015, phone:null, place_id:"ChIJwQzRXCi7AmARWccmYfpezQQ", types:["train_station"]},
+  {name:"Miyagawa Morning Market", lat:36.144704, lng:137.2579466, note:"WALK ~5-10 min. Breakfast here. PAY: cash, open 7AM-noon", rating:4.1, count:10562, phone:null, place_id:"ChIJE-ywz9a6AmAR1uD5rAwvJkw", types:["tourist_attraction","market"]},
+  {name:"Takayama Station (Home Base)", lat:36.1410762, lng:137.2513645, note:"Back to Nohi Bus Center", rating:4.2, count:1015, phone:null, place_id:"ChIJwQzRXCi7AmARWccmYfpezQQ", types:["train_station"]},
+  {name:"Shinhotaka Ropeway", lat:36.2857919, lng:137.5752622, note:"BUS ~1.5 hrs, NOT covered by JR pass. Lunch: soba noodles. PAY: cash/credit", rating:4.6, count:3504, phone:"+81 578-89-2252", place_id:"ChIJLUAe875PHWARkR1e5ffwR9k", types:["observation_deck","tourist_attraction"]},
+  {name:"Takayama Station (Home Base)", lat:36.1410762, lng:137.2513645, note:"BUS return", rating:4.2, count:1015, phone:null, place_id:"ChIJwQzRXCi7AmARWccmYfpezQQ", types:["train_station"]},
+ ]},
+ { n:6, title:"Shirakawa-go to Toyama", summary:"Bags in a locker, a Nohi Bus stop in Shirakawa-go, then onward to Toyama, your next home base.", color:"#2874A6", stops:[
+  {name:"Takayama Station (Home Base)", lat:36.1410762, lng:137.2513645, note:"Early check-out, bags in locker. BUS to Shirakawa-go", rating:4.2, count:1015, phone:null, place_id:"ChIJwQzRXCi7AmARWccmYfpezQQ", types:["train_station"]},
+  {name:"Shirakawa-go (Ogimachi)", lat:36.2550982, lng:136.9022991, note:"Explore, lunch at Irori", rating:4.4, count:1853, phone:"+81 5769-6-1231", place_id:"ChIJZS8K5LBx-F8R3iMSHZ_7Tis", types:["tourist_attraction","museum"]},
+  {name:"Toyama Station (New Home Base)", lat:36.7018268, lng:137.2126258, note:"BUS onward, check in to Toyoko Inn", rating:4.1, count:1872, phone:null, place_id:"ChIJeT4gW5yQ918RdrL91LyNLv0", types:["train_station"]},
+ ]},
+ { n:7, title:"Kanazawa Day Trip", summary:"Shinkansen to Kanazawa, a full loop through gardens, castle, markets, and both samurai and geisha districts, then back to Toyama.", color:"#B7950B", stops:[
+  {name:"Toyama Station (Home Base)", lat:36.7018268, lng:137.2126258, note:"TRAIN: Hokuriku Shinkansen, ~20 min", rating:4.1, count:1872, phone:null, place_id:"ChIJeT4gW5yQ918RdrL91LyNLv0", types:["train_station"]},
+  {name:"Kanazawa Station", lat:36.5780443, lng:136.6481714, note:"Mostly WALK from here, or Loop Bus", rating:4.3, count:4476, phone:"+81 570-002-486", place_id:"ChIJBYa7A0Iz-F8R6qe7HgH2XV0", types:["train_station"]},
+  {name:"Kenroku-en", lat:36.5621278, lng:136.6626515, note:"PAY: cash entry", rating:4.4, count:37847, phone:"+81 76-234-3800", place_id:"ChIJBVmy-YMz-F8R5PID8D17Cpc", types:["garden","tourist_attraction"]},
+  {name:"Kanazawa Castle Park", lat:36.5659458, lng:136.6588451, note:"WALK, next to Kenroku-en", rating:4.3, count:12012, phone:"+81 76-234-3800", place_id:"ChIJlUfxPYIz-F8RSh7ml54YJ6g", types:["park","tourist_attraction"]},
+  {name:"Gyokusen-inmaru Garden", lat:36.5652682, lng:136.6573012, note:"WALK, inside castle park", rating:4.4, count:1348, phone:"+81 76-234-3800", place_id:"ChIJPQy5s3gz-F8RjGATOrCygR0", types:["garden","tourist_attraction"]},
+  {name:"Oyama Shrine", lat:36.5660731, lng:136.6554249, note:"WALK, free entry", rating:4.3, count:5657, phone:"+81 76-231-7210", place_id:"ChIJwQG-F3kz-F8RAfWyK1svniU", types:["shinto_shrine","place_of_worship"]},
+  {name:"Omicho Market", lat:36.5717335, lng:136.6558651, note:"WALK, lunch stop", rating:4.0, count:19328, phone:"+81 76-231-1462", place_id:"ChIJ0xPT93Az-F8RpTSlbHwo9L8", types:["market"]},
+  {name:"Nomura-ke Samurai Residence", lat:36.5642058, lng:136.6500324, note:"WALK or Loop Bus. PAY: cash entry", rating:4.4, count:4820, phone:"+81 76-221-3553", place_id:"ChIJF_AqPH4z-F8Rmtm1IKiShVQ", types:["historical_landmark","tourist_attraction"]},
+  {name:"Nagamachi Samurai District", lat:36.5637517, lng:136.6510146, note:"WALK, adjacent, free", rating:4.3, count:5175, phone:null, place_id:"ChIJhycOJtYz-F8RO54LaTG6_p0", types:["historical_landmark","tourist_attraction"]},
+  {name:"Higashi Chaya District", lat:36.5725825, lng:136.6665601, note:"Loop Bus or taxi across town", rating:4.2, count:23601, phone:null, place_id:"ChIJsfC6oXQz-F8RdA1qXiF6jLs", types:["tourist_attraction","historical_landmark"]},
+  {name:"Kanazawa Station", lat:36.5780443, lng:136.6481714, note:"BUS: Loop Bus back ~15 min, or 15-min walk", rating:4.3, count:4476, phone:"+81 570-002-486", place_id:"ChIJBYa7A0Iz-F8R6qe7HgH2XV0", types:["train_station"]},
+  {name:"Toyama Station (Home Base)", lat:36.7018268, lng:137.2126258, note:"TRAIN: Shinkansen back", rating:4.1, count:1872, phone:null, place_id:"ChIJeT4gW5yQ918RdrL91LyNLv0", types:["train_station"]},
+ ]},
+ { n:8, title:"Toyama & Return to Nagoya", summary:"Explore Toyama (optional Alpine Route), then the long Hida Ltd Express ride back to Nagoya.", color:"#943126", stops:[
+  {name:"Toyama Station (Home Base)", lat:36.7018268, lng:137.2126258, note:"Explore Toyama / optional Alpine Route", rating:4.1, count:1872, phone:null, place_id:"ChIJeT4gW5yQ918RdrL91LyNLv0", types:["train_station"]},
+  {name:"Nagoya Station (Home Base)", lat:35.170915, lng:136.8815369, note:"TRAIN: JR Hida via Takayama Line, ~4+ hrs, back to Nagoya", rating:4.0, count:7008, phone:"+81 50-3772-3910", place_id:"ChIJiYvXlOd2A2ARYxYm-Esg94E", types:["train_station"]},
+ ]},
+ { n:9, title:"Obara & Korankei", summary:"Subway and buses out to Nagoya's autumn foliage day trip, with dinner and illumination at Korankei.", color:"#1E8449", stops:[
+  {name:"Nagoya Station (Home Base)", lat:35.170915, lng:136.8815369, note:"SUBWAY: Higashiyama Line to Fujigaoka", rating:4.0, count:7008, phone:"+81 50-3772-3910", place_id:"ChIJiYvXlOd2A2ARYxYm-Esg94E", types:["train_station"]},
+  {name:"Fujigaoka Station", lat:35.1824617, lng:137.0213504, note:"BUS transfer toward Obara", rating:3.7, count:428, phone:null, place_id:"ChIJK37QToJlA2ARecrBuP2qUVw", types:["transit_station"]},
+  {name:"Senmi Shikizakura no Sato", lat:35.2584679, lng:137.3003771, note:"Lunch at festive stalls", rating:4.2, count:2017, phone:null, place_id:"ChIJ_-ZrRAJaA2ARI3A5wGt4doQ", types:["tourist_attraction"]},
+  {name:"Korankei Gorge", lat:35.1314726, lng:137.3131275, note:"Dinner + illumination", rating:4.3, count:7772, phone:"+81 565-62-1272", place_id:"ChIJKzjivPSoBGARzBNWLNcE7Sc", types:["scenic_spot","tourist_attraction"]},
+  {name:"Nagoya Station (Home Base)", lat:35.170915, lng:136.8815369, note:"BUS/TRAIN back — confirm last bus time", rating:4.0, count:7008, phone:"+81 50-3772-3910", place_id:"ChIJiYvXlOd2A2ARYxYm-Esg94E", types:["train_station"]},
+ ]},
+ { n:10, title:"Departure", summary:"Check out and head back to Chubu Centrair for the flight home to Manila.", color:"#616A6B", stops:[
+  {name:"Nagoya Station (Home Base)", lat:35.170915, lng:136.8815369, note:"Check out", rating:4.0, count:7008, phone:"+81 50-3772-3910", place_id:"ChIJiYvXlOd2A2ARYxYm-Esg94E", types:["train_station"]},
+  {name:"Chubu Centrair Airport", lat:34.8573624, lng:136.8107557, note:"TRAIN: Meitetsu Line. Flight back to Manila", rating:4.3, count:9979, phone:"+81 569-38-1195", place_id:"ChIJzynM7ZN9BGARJQAsbih9mEI", types:["international_airport","airport"]},
+ ]},
+];
+
+// Flatten all stops across all days into one continuous list for cross-day pagination
+const flatStops = [];
+days.forEach(day => day.stops.forEach((s, i) => flatStops.push({ day, stop: s, idxInDay: i })));
+
+// Group stops that share (near-)identical coordinates so we can fan overlapping markers apart visually
+function coordKey(s) { return s.lat.toFixed(5) + ',' + s.lng.toFixed(5); }
+const coordGroups = {};
+flatStops.forEach((f, flatIdx) => {
+  const k = coordKey(f.stop);
+  (coordGroups[k] = coordGroups[k] || []).push(flatIdx);
+});
+function markerLatLng(stop, flatIdx) {
+  const group = coordGroups[coordKey(stop)];
+  if (group.length <= 1) return [stop.lat, stop.lng];
+  const pos = group.indexOf(flatIdx);
+  const angle = (2 * Math.PI * pos) / group.length;
+  const offsetDeg = 0.0009; // small ring radius, ~100m
+  const latOff = offsetDeg * Math.sin(angle);
+  const lngOff = (offsetDeg * Math.cos(angle)) / Math.cos(stop.lat * Math.PI / 180);
+  return [stop.lat + latOff, stop.lng + lngOff];
+}
+
+const map = L.map('map').setView([36.0, 137.0], 8);
+L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}', {
+  maxZoom: 19,
+  attribution: 'Tiles &copy; Esri — Source: Esri, DeLorme, NAVTEQ, USGS, Intermap, iPC, NRCAN, Esri Japan, METI, Esri China (Hong Kong), TomTom'
+}).addTo(map);
+
+const dayLayers = {};
+const allBounds = [];
+
+days.forEach(day => {
+  const layerGroup = L.layerGroup();
+  const latlngs = day.stops.map(s => [s.lat, s.lng]);
+  L.polyline(latlngs, { color: day.color, weight: 3, opacity: 0.8, dashArray: '6,6' }).addTo(layerGroup);
+
+  day.stops.forEach((s, i) => {
+    const flatIdx = flatStops.findIndex(f => f.day.n === day.n && f.idxInDay === i);
+    const icon = L.divIcon({
+      className: 'numbered-marker',
+      html: `<div class="pin" style="background:${day.color}">${i+1}</div>`,
+      iconSize: [26, 26],
+      iconAnchor: [13, 13],
+      popupAnchor: [0, -13],
+    });
+    const marker = L.marker(markerLatLng(s, flatIdx), { icon }).addTo(layerGroup);
+    marker.bindTooltip(s.name, { direction: 'top', offset: [0, -14], className: 'stop-tooltip' });
+    marker.on('click', () => openDetailCard(flatIdx));
+    allBounds.push([s.lat, s.lng]);
+  });
+  dayLayers[day.n] = layerGroup;
+});
+
+function showOnly(dayNum) {
+  Object.values(dayLayers).forEach(l => map.removeLayer(l));
+  closeDetail();
+  if (dayNum === 'all') {
+    Object.values(dayLayers).forEach(l => l.addTo(map));
+    map.fitBounds(allBounds, { padding: [30,30] });
+    closeList();
+  } else {
+    dayLayers[dayNum].addTo(map);
+    const day = days.find(d => d.n === dayNum);
+    map.fitBounds(day.stops.map(s => [s.lat, s.lng]), { padding: [50,50] });
+    openListPanel(dayNum);
+  }
+  document.querySelectorAll('.day-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById(dayNum === 'all' ? 'allBtn' : 'day-' + dayNum).classList.add('active');
+}
+
+// ---- List panel (per day sequence) ----
+const listPanel = document.getElementById('listPanel');
+function openListPanel(dayNum, highlightFlatIdx) {
+  const day = days.find(d => d.n === dayNum);
+  document.getElementById('panelDayTag').textContent = 'Day ' + day.n;
+  document.getElementById('panelTitle').textContent = day.title;
+  document.getElementById('panelSummary').textContent = day.summary;
+  document.getElementById('openRouteBtn').onclick = () => window.open(routeUrl(day.stops), '_blank');
+
+  const listEl = document.getElementById('stopList');
+  listEl.innerHTML = '';
+  day.stops.forEach((s, i) => {
+    const flatIdx = flatStops.findIndex(f => f.day.n === day.n && f.idxInDay === i);
+    const row = document.createElement('div');
+    row.className = 'stopRow';
+    row.id = 'listrow-' + flatIdx;
+    if (flatIdx === highlightFlatIdx) row.classList.add('active');
+    row.onclick = () => openDetailCard(flatIdx);
+    const ratingHtml = s.rating
+      ? `<span class="stars">${starString(s.rating)}</span> ${s.rating.toFixed(1)} (${s.count.toLocaleString()}) · ${categoryLabel(s.types)}`
+      : categoryLabel(s.types);
+    row.innerHTML = `
+      <div class="stopThumb" style="background:${day.color}">${categoryIcon(s.types)}</div>
+      <div class="stopInfo">
+        <div class="stopName">${i+1}. ${s.name}</div>
+        <div class="stopMeta">${ratingHtml}</div>
+        <div class="stopNote">${s.note}</div>
+      </div>`;
+    listEl.appendChild(row);
+  });
+  listPanel.classList.add('open');
+  if (highlightFlatIdx !== undefined) {
+    const activeRow = document.getElementById('listrow-' + highlightFlatIdx);
+    if (activeRow) activeRow.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  }
+}
+function closeList() { listPanel.classList.remove('open'); }
+document.getElementById('panelClose').onclick = closeList;
+document.getElementById('panelCollapseBtn').onclick = () => {
+  listPanel.classList.toggle('collapsed');
+  document.getElementById('panelCollapseBtn').textContent = listPanel.classList.contains('collapsed') ? '▸' : '▾';
+};
+
+// ---- Detail card (single stop, continuous pagination across all days) ----
+const detailCard = document.getElementById('detailCard');
+let currentFlatIdx = 0;
+
+function openDetailCard(flatIdx) {
+  currentFlatIdx = flatIdx;
+  renderDetail();
+  detailCard.classList.add('open');
+  const { day, stop } = flatStops[flatIdx];
+  if (listPanel.classList.contains('open')) openListPanel(day.n, flatIdx);
+  map.panTo([stop.lat, stop.lng]);
+}
+function closeDetail() { detailCard.classList.remove('open'); }
+function renderDetail() {
+  const { day, stop } = flatStops[currentFlatIdx];
+  document.getElementById('cardDayTag').textContent = 'Day ' + day.n;
+  document.getElementById('cardBanner').style.background = `linear-gradient(135deg, ${day.color}, #1c1f24)`;
+  document.getElementById('cardIcon').textContent = categoryIcon(stop.types);
+  document.getElementById('cardName').textContent = stop.name;
+  document.getElementById('cardCategory').textContent = categoryLabel(stop.types);
+  if (stop.rating) {
+    document.querySelector('#cardMeta .stars').textContent = starString(stop.rating);
+    document.getElementById('cardRatingText').textContent = `${stop.rating.toFixed(1)} (${stop.count.toLocaleString()})`;
+  } else {
+    document.querySelector('#cardMeta .stars').textContent = '';
+    document.getElementById('cardRatingText').textContent = 'No rating';
+  }
+  document.getElementById('cardNotes').textContent = stop.note;
+  const phoneRow = document.getElementById('cardPhoneRow');
+  if (stop.phone) {
+    phoneRow.style.display = 'flex';
+    phoneRow.href = 'tel:' + stop.phone.replace(/[^+\d]/g,'');
+    document.getElementById('cardPhone').textContent = stop.phone;
+  } else {
+    phoneRow.style.display = 'none';
+  }
+  document.getElementById('cardMapsRow').href = mapsUrl(stop.place_id);
+
+  document.getElementById('cardCounter').innerHTML =
+    `${currentFlatIdx+1} of ${flatStops.length}<span id="cardCounterDay">Day ${day.n} — ${day.title}</span>`;
+  document.getElementById('prevBtn').disabled = currentFlatIdx === 0;
+  document.getElementById('nextBtn').disabled = currentFlatIdx === flatStops.length - 1;
+}
+function stepDetail(delta) {
+  const newIdx = currentFlatIdx + delta;
+  if (newIdx < 0 || newIdx >= flatStops.length) return;
+  const prevDay = flatStops[currentFlatIdx].day.n;
+  currentFlatIdx = newIdx;
+  const newDay = flatStops[currentFlatIdx].day.n;
+  if (newDay !== prevDay) {
+    // crossed into a new day: switch the map view and highlight the right day button
+    Object.values(dayLayers).forEach(l => map.removeLayer(l));
+    dayLayers[newDay].addTo(map);
+    document.querySelectorAll('.day-btn').forEach(b => b.classList.remove('active'));
+    document.getElementById('day-' + newDay).classList.add('active');
+  }
+  renderDetail();
+  if (listPanel.classList.contains('open')) openListPanel(newDay, currentFlatIdx);
+  const { stop } = flatStops[currentFlatIdx];
+  map.panTo([stop.lat, stop.lng]);
+}
+document.getElementById('prevBtn').onclick = () => stepDetail(-1);
+document.getElementById('nextBtn').onclick = () => stepDetail(1);
+document.getElementById('cardCloseBtn').onclick = closeDetail;
+document.getElementById('cardBackBtn').onclick = () => {
+  closeDetail();
+  openListPanel(flatStops[currentFlatIdx].day.n);
+};
+
+// ---- Draggable panels ----
+function makeDraggable(panel, handle) {
+  let dragging = false, startX = 0, startY = 0, origLeft = 0, origTop = 0;
+  handle.addEventListener('pointerdown', (e) => {
+    if (e.target.closest('button')) return; // let buttons work normally
+    e.stopPropagation();
+    const wrapEl = document.getElementById('mapWrapper');
+    const panelRect = panel.getBoundingClientRect();
+    const wrapRect = wrapEl.getBoundingClientRect();
+    origLeft = panelRect.left - wrapRect.left;
+    origTop = panelRect.top - wrapRect.top;
+    panel.style.left = origLeft + 'px';
+    panel.style.top = origTop + 'px';
+    panel.style.right = 'auto';
+    panel.style.bottom = 'auto';
+    startX = e.clientX; startY = e.clientY;
+    dragging = true;
+    handle.setPointerCapture(e.pointerId);
+  });
+  handle.addEventListener('pointermove', (e) => {
+    if (!dragging) return;
+    e.stopPropagation();
+    const wrapEl = document.getElementById('mapWrapper');
+    const wrapRect = wrapEl.getBoundingClientRect();
+    let newLeft = origLeft + (e.clientX - startX);
+    let newTop = origTop + (e.clientY - startY);
+    newLeft = Math.max(-panel.offsetWidth + 60, Math.min(newLeft, wrapRect.width - 60));
+    newTop = Math.max(0, Math.min(newTop, wrapRect.height - 40));
+    panel.style.left = newLeft + 'px';
+    panel.style.top = newTop + 'px';
+  });
+  function endDrag(e) { dragging = false; try { handle.releasePointerCapture(e.pointerId); } catch(err){} }
+  handle.addEventListener('pointerup', endDrag);
+  handle.addEventListener('pointercancel', endDrag);
+}
+makeDraggable(listPanel, document.getElementById('panelHeader'));
+makeDraggable(detailCard, document.getElementById('cardBanner'));
+L.DomEvent.disableClickPropagation(listPanel);
+L.DomEvent.disableScrollPropagation(listPanel);
+L.DomEvent.disableClickPropagation(detailCard);
+L.DomEvent.disableScrollPropagation(detailCard);
+
+const listEl2 = document.getElementById('dayList');
+days.forEach(day => {
+  const btn = document.createElement('button');
+  btn.className = 'day-btn';
+  btn.id = 'day-' + day.n;
+  btn.innerHTML = `<span class="swatch" style="background:${day.color}"></span>Day ${day.n} — ${day.title}`;
+  btn.onclick = () => showOnly(day.n);
+  listEl2.appendChild(btn);
+});
+document.getElementById('allBtn').onclick = () => showOnly('all');
+
+showOnly('all');
+</script>
+
+</body>
+</html>
