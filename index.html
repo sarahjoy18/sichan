@@ -51,6 +51,16 @@
   }
   .stop-tooltip::before { border-top-color:#2b2f36; }
 
+  /* Transport-mode tooltip that follows the cursor along each route segment */
+  .transit-tooltip.leaflet-tooltip {
+    display:flex; align-items:center; gap:6px; background:#fff; border:1px solid rgba(0,0,0,0.1);
+    border-radius:16px; padding:5px 12px; box-shadow:0 1px 4px rgba(0,0,0,0.35);
+    white-space:nowrap; opacity:1;
+  }
+  .transit-tooltip.leaflet-tooltip::before { display:none; }
+  .transit-tooltip .ti-icon { font-size:1.1rem; line-height:1; margin-right:4px; }
+  .transit-tooltip .ti-label { font-size:0.78rem; font-weight:700; color:#2b2f36; line-height:1; }
+
   /* Draggable panel header */
   .panel-header-drag { cursor:move; user-select:none; }
   .dragHandle {
@@ -222,6 +232,20 @@ function starString(rating) {
 function mapsUrl(placeId) {
   return placeId ? `https://www.google.com/maps/place/?q=place_id:${placeId}` : "#";
 }
+function transportInfo(note) {
+  if (!note) return null;
+  const n = note.toUpperCase();
+  if (n.includes('SHINKANSEN')) return { icon: '🚄', label: 'Shinkansen' };
+  if (n.includes('ROPEWAY')) return { icon: '🚡', label: 'Ropeway' };
+  if (n.includes('TRAIN')) return { icon: '🚆', label: 'Train' };
+  if (n.includes('SUBWAY')) return { icon: '🚇', label: 'Subway' };
+  if (n.includes('BUS')) return { icon: '🚌', label: 'Bus' };
+  if (n.includes('WALK')) return { icon: '🚶', label: 'Walk' };
+  return null;
+}
+function segmentInfo(fromStop, toStop) {
+  return transportInfo(toStop.note) || transportInfo(fromStop.note) || { icon: '🚶', label: 'Walk' };
+}
 function routeUrl(stops) {
   const coords = stops.map(s => `${s.lat},${s.lng}`);
   const origin = coords[0], destination = coords[coords.length-1];
@@ -338,7 +362,23 @@ const allBounds = [];
 days.forEach(day => {
   const layerGroup = L.layerGroup();
   const latlngs = day.stops.map(s => [s.lat, s.lng]);
-  L.polyline(latlngs, { color: day.color, weight: 3, opacity: 0.8, dashArray: '6,6' }).addTo(layerGroup);
+  for (let i = 0; i < latlngs.length - 1; i++) {
+    const a = day.stops[i], b = day.stops[i + 1];
+    // visible dashed line (decorative only)
+    L.polyline([latlngs[i], latlngs[i + 1]], {
+      color: day.color, weight: 3, opacity: 0.8, dashArray: '6,6', interactive: false
+    }).addTo(layerGroup);
+    // wider invisible line on top, purely to make hovering easy
+    const hitLine = L.polyline([latlngs[i], latlngs[i + 1]], {
+      color: day.color, weight: 16, opacity: 0
+    }).addTo(layerGroup);
+
+    const info = segmentInfo(a, b);
+    hitLine.bindTooltip(
+      `<span class="ti-icon">${info.icon}</span><span class="ti-label">${info.label}</span>`,
+      { sticky: true, direction: 'top', offset: [0, -10], className: 'transit-tooltip' }
+    );
+  }
 
   day.stops.forEach((s, i) => {
     const flatIdx = flatStops.findIndex(f => f.day.n === day.n && f.idxInDay === i);
